@@ -99,33 +99,33 @@ func (h *UserHandler) DeleteUser(c *fiber.Ctx) error {
 }
 
 // Login authenticates a user and returns a JWT token
-func (h *UserHandler) Login(c *fiber.Ctx) error {
-	input := new(models.LoginInput)
-	if err := c.BodyParser(input); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid input"})
-	}
+// func (h *UserHandler) Login(c *fiber.Ctx) error {
+// 	input := new(models.LoginInput)
+// 	if err := c.BodyParser(input); err != nil {
+// 		return c.Status(400).JSON(fiber.Map{"error": "Invalid input"})
+// 	}
 
-	var user models.User
-	if err := h.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
-		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
-	}
+// 	var user models.User
+// 	if err := h.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+// 		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
+// 	}
 
-	// In production, use proper password hashing comparison
-	if input.Password != user.Password {
-		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
-	}
+// 	// In production, use proper password hashing comparison
+// 	if input.Password != user.Password {
+// 		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
+// 	}
 
-	// Create token
-	token := jwt.New(jwt.SigningMethodHS256)
+// 	// Create token
+// 	token := jwt.New(jwt.SigningMethodHS256)
 
-	claims := token.Claims.(jwt.MapClaims)
-	claims["user_id"] = user.ID
-	claims["exp"] = time.Now().Add(h.ExpiresIn).Unix()
+// 	claims := token.Claims.(jwt.MapClaims)
+// 	claims["user_id"] = user.ID
+// 	claims["exp"] = time.Now().Add(h.ExpiresIn).Unix()
 
-	t, err := token.SignedString([]byte(h.JWTSecret))
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Could not login"})
-	}
+// 	t, err := token.SignedString([]byte(h.JWTSecret))
+// 	if err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"error": "Could not login"})
+// 	}
 
-	return c.JSON(fiber.Map{"token": t})
-}
+// 	return c.JSON(fiber.Map{"token": t})
+// }

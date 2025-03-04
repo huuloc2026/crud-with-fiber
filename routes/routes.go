@@ -11,6 +11,11 @@ import (
 
 func SetupRoutes(app *fiber.App, db *gorm.DB, config *config.Config) {
 	// Initialize handlers
+	authHandler := handlers.NewAuthHandler(
+		db,
+		config.JWT.Secret,
+		config.JWT.ExpiresIn,
+	)
 	userHandler := handlers.NewUserHandler(
 		db,
 		config.JWT.Secret,
@@ -20,12 +25,13 @@ func SetupRoutes(app *fiber.App, db *gorm.DB, config *config.Config) {
 
 	// Public routes
 	auth := app.Group("/api/auth")
-	auth.Post("/login", userHandler.Login)
+	auth.Post("/register", authHandler.Register)
+	auth.Post("/login", authHandler.Login)
 
 	// User routes
 	users := app.Group("/api/users")
-	users.Post("/", userHandler.CreateUser)
 	users.Use(middleware.JWTProtected(config.JWT.Secret))
+	users.Post("/", userHandler.CreateUser)
 	users.Get("/", userHandler.GetUsers)
 	users.Get("/:id", userHandler.GetUser)
 	users.Put("/:id", userHandler.UpdateUser)
