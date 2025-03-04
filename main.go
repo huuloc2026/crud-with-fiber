@@ -29,7 +29,7 @@ func main() {
 	db := config.ConnectDB(&cfg.Database)
 
 	// Setup routes
-	routes.SetupRoutes(app, db)
+	routes.SetupRoutes(app, db, &config.Config{})
 
 	// Start server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

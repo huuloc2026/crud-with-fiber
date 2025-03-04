@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"myapp/models"
+	"myapp/utils"
+	"strconv"
+
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
-	"myapp/models"
 )
 
 type ProductHandler struct {
@@ -31,8 +34,11 @@ func (h *ProductHandler) CreateProduct(c *fiber.Ctx) error {
 // GetProducts returns all products
 func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
 	var products []models.Product
-	h.DB.Find(&products)
-	return c.JSON(products)
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "10"))
+
+	pagination := utils.Paginate(h.DB.Find(&products), &products, page, limit)
+	return c.JSON(pagination)
 }
 
 // GetProduct returns a specific product

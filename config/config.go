@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"myapp/models"
 
@@ -14,6 +15,7 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
+	JWT      JWTConfig
 }
 
 type ServerConfig struct {
@@ -29,6 +31,11 @@ type DatabaseConfig struct {
 	Name     string
 	SSLMode  string `mapstructure:"sslmode"`
 	Timezone string
+}
+
+type JWTConfig struct {
+	Secret    string
+	ExpiresIn time.Duration `mapstructure:"expires_in"`
 }
 
 func LoadConfig() (*Config, error) {
