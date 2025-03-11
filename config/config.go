@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"log"
-	"time"
 
 	"myapp/models"
 
@@ -15,12 +14,14 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
+	Redis    RedisConfig
+	RabbitMQ RabbitMQConfig
 	JWT      JWTConfig
 }
 
 type ServerConfig struct {
-	Port int
 	Host string
+	Port int
 }
 
 type DatabaseConfig struct {
@@ -28,29 +29,99 @@ type DatabaseConfig struct {
 	Port     int
 	User     string
 	Password string
-	Name     string
-	SSLMode  string `mapstructure:"sslmode"`
-	Timezone string
+	DBName   string
 }
 
 type JWTConfig struct {
 	Secret    string
-	ExpiresIn time.Duration `mapstructure:"expires_in"`
+	ExpiresIn string
 }
 
 func LoadConfig() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
+
 	viper.AutomaticEnv()
 
-	var config Config
-	if err := viper.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+	// Check if running in Docker by checking environment variables
+	dbHost := viper.GetString("DB_HOST")
+	redisHost := viper.GetString("REDIS_HOST")
+	rabbitmqHost := viper.GetString("RABBITMQ_HOST")
+
+	// Server configuration
+	if dbHost != "" {
+		// In Docker, use port 3000
+		viper.SetDefault("server.port", 3000)
+	} else {
+		// Locally, use port 8000
+		viper.SetDefault("server.port", 8000)
+	}
+	viper.SetDefault("server.host", "0.0.0.0")
+
+	// Database configuration
+	if dbHost != "" {
+		viper.Set("database.host", dbHost)
+	} else {
+		viper.Set("database.host", "localhost")
 	}
 
+	viper.SetDefault("database.port", 5432)
+	viper.SetDefault("database.user", "postgres")
+	viper.SetDefault("database.password", "postgres")
+	viper.SetDefault("database.dbname", "myapp")
+
+	// Bind database environment variables
+	viper.BindEnv("database.host", "DB_HOST")
+	viper.BindEnv("database.port", "DB_PORT")
+	viper.BindEnv("database.user", "DB_USER")
+	viper.BindEnv("database.password", "DB_PASSWORD")
+	viper.BindEnv("database.dbname", "DB_NAME")
+
+	// Redis configuration
+	if redisHost != "" {
+		viper.Set("redis.host", redisHost)
+	} else {
+		viper.Set("redis.host", "localhost")
+	}
+	viper.SetDefault("redis.port", "6379")
+	viper.SetDefault("redis.password", "")
+	viper.SetDefault("redis.db", 0)
+
+	// Bind Redis environment variables
+	viper.BindEnv("redis.host", "REDIS_HOST")
+	viper.BindEnv("redis.port", "REDIS_PORT")
+	viper.BindEnv("redis.password", "REDIS_PASSWORD")
+
+	// RabbitMQ configuration
+	if rabbitmqHost != "" {
+		viper.Set("rabbitmq.host", rabbitmqHost)
+	} else {
+		viper.Set("rabbitmq.host", "localhost")
+	}
+	viper.SetDefault("rabbitmq.port", "5672")
+	viper.SetDefault("rabbitmq.user", "guest")
+	viper.SetDefault("rabbitmq.password", "guest")
+
+	// Bind RabbitMQ environment variables
+	viper.BindEnv("rabbitmq.host", "RABBITMQ_HOST")
+	viper.BindEnv("rabbitmq.port", "RABBITMQ_PORT")
+	viper.BindEnv("rabbitmq.user", "RABBITMQ_USER")
+	viper.BindEnv("rabbitmq.password", "RABBITMQ_PASSWORD")
+
+	viper.SetDefault("jwt.secret", "your-secret-key")
+	viper.SetDefault("jwt.expiresIn", "24h")
+
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, err
+		}
+	}
+
+	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		return nil, err
 	}
 
 	return &config, nil
@@ -62,10 +133,10 @@ func ConnectDB(config *DatabaseConfig) *gorm.DB {
 		config.Host,
 		config.User,
 		config.Password,
-		config.Name,
+		config.DBName,
 		config.Port,
-		config.SSLMode,
-		config.Timezone,
+		"disable",
+		"UTC",
 	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})

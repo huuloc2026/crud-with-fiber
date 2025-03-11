@@ -1,24 +1,33 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"myapp/models"
 	"myapp/utils"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
+	"github.com/streadway/amqp"
 	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
 	DB        *gorm.DB
+	Redis     *redis.Client
+	RabbitMQ  *amqp.Channel
 	JWTSecret string
 	ExpiresIn time.Duration
 }
 
-func NewAuthHandler(db *gorm.DB, jwtSecret string, expiresIn time.Duration) *AuthHandler {
+func NewAuthHandler(db *gorm.DB, redis *redis.Client, rabbitmq *amqp.Channel, jwtSecret string, expiresIn time.Duration) *AuthHandler {
 	return &AuthHandler{
 		DB:        db,
+		Redis:     redis,
+		RabbitMQ:  rabbitmq,
 		JWTSecret: jwtSecret,
 		ExpiresIn: expiresIn,
 	}
@@ -64,12 +73,28 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid input"})
 	}
 
+	// Check Redis cache first
+	ctx := context.Background()
+	cacheKey := fmt.Sprintf("user:email:%s", input.Email)
+	cachedUser, err := h.Redis.Get(ctx, cacheKey).Result()
+
 	var user models.User
-	if err := h.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
-		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
+	if err == nil {
+		// User found in cache
+		if err := json.Unmarshal([]byte(cachedUser), &user); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Cache error"})
+		}
+	} else {
+		// User not in cache, query DB
+		if err := h.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
+		}
+
+		// Cache user data
+		userData, _ := json.Marshal(user)
+		h.Redis.Set(ctx, cacheKey, userData, 24*time.Hour)
 	}
 
-	// In production, use proper password hashing comparison
 	hashPassword, err := utils.HashPassword(input.Password)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not hash password"})
@@ -82,7 +107,6 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	// Create token
 	token := jwt.New(jwt.SigningMethodHS256)
-
 	claims := token.Claims.(jwt.MapClaims)
 	claims["user_id"] = user.ID
 	claims["exp"] = time.Now().Add(h.ExpiresIn).Unix()
@@ -90,6 +114,29 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	t, err := token.SignedString([]byte(h.JWTSecret))
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not login"})
+	}
+
+	// Send login notification to RabbitMQ
+	notification := map[string]interface{}{
+		"event":     "user_login",
+		"user_id":   user.ID,
+		"timestamp": time.Now(),
+	}
+	notificationBytes, _ := json.Marshal(notification)
+
+	err = h.RabbitMQ.Publish(
+		"",              // exchange
+		"notifications", // routing key
+		false,           // mandatory
+		false,           // immediate
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        notificationBytes,
+		},
+	)
+	if err != nil {
+		// Log the error but don't fail the login
+		fmt.Printf("Failed to publish login notification: %v\n", err)
 	}
 
 	return c.JSON(fiber.Map{"token": t})

@@ -28,8 +28,29 @@ func main() {
 	// Connect to database
 	db := config.ConnectDB(&cfg.Database)
 
-	// Setup routes
-	routes.SetupRoutes(app, db, cfg)
+	// Initialize Redis
+	redisCfg := &config.RedisConfig{
+		Host:     cfg.Redis.Host,
+		Port:     cfg.Redis.Port,
+		Password: cfg.Redis.Password,
+		DB:       0,
+	}
+	redisClient := config.NewRedisClient(redisCfg)
+	defer redisClient.Close()
+
+	// Initialize RabbitMQ
+	rabbitmqCfg := &config.RabbitMQConfig{
+		Host:     cfg.RabbitMQ.Host,
+		Port:     cfg.RabbitMQ.Port,
+		User:     cfg.RabbitMQ.User,
+		Password: cfg.RabbitMQ.Password,
+	}
+	rabbitmqConn, rabbitmqChannel := config.NewRabbitMQConnection(rabbitmqCfg)
+	defer rabbitmqConn.Close()
+	defer rabbitmqChannel.Close()
+
+	// Setup routes with Redis and RabbitMQ
+	routes.SetupRoutes(app, db, redisClient, rabbitmqChannel, cfg)
 
 	// Start server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
